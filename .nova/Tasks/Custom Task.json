@@ -1,0 +1,9 @@
+{
+  "actions" : {
+    "run" : {
+      "enabled" : true,
+      "script" : "#!\/bin\/sh\nopen -n -a love ..\/asteroids"
+    }
+  },
+  "identifier" : "CEA7D4CA-EDB7-4D35-9CB3-CCC5A84ADF13"
+}
