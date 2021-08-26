@@ -195,13 +195,15 @@ end
 function isLaserColliding(obstacles, laser)
 	
 	for i=1, #obstacles, 1 do
-		oPoints = {}
-		table.insert(oPoints, obstacles[i].points)
-		for j = 1, #oPoints, 1 do
-			if checkCollision(oPoints[j], {{x = laser.x, y = laser.y}}) then 
-				obstacles[i].active = false
-				laser.active = false
-				return true
+		if obstacles[i].active then
+			oPoints = {}
+			table.insert(oPoints, obstacles[i].points)
+			for j = 1, #oPoints, 1 do
+				if checkCollision(oPoints[j], {{x = laser.x, y = laser.y}}) then 
+					obstacles[i].active = false
+					laser.active = false
+					return true
+				end
 			end
 		end
 	end
@@ -439,7 +441,12 @@ function updateLasers(dt)
 			}
 			
 			player.lasers[i].x = player.lasers[i].x + boltMove.x
+			if player.lasers[i].x > screenSize[1] then player.lasers[i].x = 0
+			elseif player.lasers[i].x < 0 then player.lasers[i].x = screenSize[1] end
+			
 			player.lasers[i].y = player.lasers[i].y + boltMove.y
+			if player.lasers[i].y > screenSize[2] then player.lasers[i].y = 0
+			elseif player.lasers[i].y < 0 then player.lasers[i].y = screenSize[2] end
 		end
 	end
 end
