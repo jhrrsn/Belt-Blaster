@@ -8,6 +8,13 @@ decay = 50
 spin = 100
 sizeMod = 50
 respawnTime = 2
+roidSize = 30
+roidVariance = 10
+roidSpeed = 100
+laserSpeed = 200
+laserDecay = 2
+laserClearTime = 1
+laserNextClear = 0
 debug = true
 
 -- Initialising stuff
@@ -52,32 +59,47 @@ function love.load()
 			left = {x = 0, y = 0}
 		},
 		bearing = 270,
+		heading = {x = 0, x = 0},
+		lasers = {},
 		size = screenSize[1]/sizeMod, -- set player size based on screen size
 		speed = 0,
 		alive = true,
+		firing = false,
 		invincible = false,
 		respawn = 0
 	}
 	
-	-- initialise asteroids (currently hard-coded)
+	math.randomseed(os.time())
+	sx = screenSize[1]/4
+	sy = screenSize[2]/4
 	asteroids = {
 		{
-			{x = 100, y = 100},
-			{x = 200, y = 100},
-			{x = 200, y = 120},
-			{x = 180, y = 140},
-			{x = 200, y = 160},
-			{x = 200, y = 200},
-			{x = 100, y = 200}
+			points = generateAsteroid({x = sx, y = sy}),
+			bearing = math.random(0, 360),
+			speed = roidSpeed,
+			tier = 2,
+			active = true
 		},
 		{
-			{x = 300, y = 300},
-			{x = 350, y = 300},
-			{x = 400, y = 320},
-			{x = 380, y = 340},
-			{x = 400, y = 360},
-			{x = 350, y = 400},
-			{x = 280, y = 400}
+			points = generateAsteroid({x = 3*sx, y = sy}),
+			bearing = math.random(0, 360),
+			speed = roidSpeed,
+			tier = 2,
+			active = true
+		},
+		{
+			points = generateAsteroid({x = sx, y = 3*sy}),
+			bearing = math.random(0, 360),
+			speed = roidSpeed,
+			tier = 2,
+			active = true
+		},
+		{
+			points = generateAsteroid({x = 3*sx, y = 3*sy}),
+			bearing = math.random(0, 360),
+			speed = roidSpeed,
+			tier = 2,
+			active = true
 		}
 	}
 end
@@ -93,7 +115,13 @@ function love.update(dt)
 	end
 
 	-- update player's position (if alive)
-	if player.alive then 
+	if player.alive then
+		if love.keyboard.isDown("space") and not player.firing then
+			fireLaser()
+			player.firing = true
+		elseif player.firing and not love.keyboard.isDown("space") then
+			player.firing = false
+		end
 		updatePlayer(dt)
 	elseif love.timer.getTime() > player.respawn then
 		player.position = {x = player.respawnPosition.x, y = player.respawnPosition.y}
@@ -102,6 +130,25 @@ function love.update(dt)
 		player.alive = true
 	end
 	
+	-- update asteroid positions
+	updateAsteroids(dt)
+	
+	-- remove inactive lasers
+	activeLasers = {}
+	for i=1, #player.lasers, 1 do
+		if player.lasers[i].active then table.insert(activeLasers, player.lasers[i]) end
+	end
+	player.lasers = activeLasers
+	
+	-- update laser positions
+	updateLasers(dt)
+	
+	-- check lasers against asteroids
+	for i=1, #player.lasers, 1 do
+		if player.lasers[i].active then 
+			isLaserColliding(asteroids, player.lasers[i])
+		end
+	end
 end
 
 
@@ -113,7 +160,10 @@ function love.draw()
 	
 	-- draw asteroids
 	drawAsteroids(asteroids)
-	 
+	
+	-- draw lasers
+	drawLasers(player.lasers)
+	
 	-- Debug text
 	if debug then
 		printDebug()
@@ -121,15 +171,43 @@ function love.draw()
 end
 
 
+-- Check if player is colliding with an obstacle (asteroid)
 function isPlayerColliding(obstacles)
-	-- check against each obstacle
-	for i = 1, #obstacles, 1 do
-		if checkCollision(obstacles[i], {player.ship.top, player.ship.right, player.ship.left}) then return true end
+
+	for i=1, #obstacles, 1 do
+		if obstacles[i].active then
+			oPoints = {}
+			table.insert(oPoints, obstacles[i].points)
+			-- check against each obstacle
+			for j = 1, #oPoints, 1 do
+				if checkCollision(oPoints[j], {player.ship.top, player.ship.right, player.ship.left}) then 
+					return true
+				end
+			end
+		end
 	end
 	
 	return false
 end
 
+
+-- Check if laser is colliding with an asteroid
+function isLaserColliding(obstacles, laser)
+	
+	for i=1, #obstacles, 1 do
+		oPoints = {}
+		table.insert(oPoints, obstacles[i].points)
+		for j = 1, #oPoints, 1 do
+			if checkCollision(oPoints[j], {{x = laser.x, y = laser.y}}) then 
+				obstacles[i].active = false
+				laser.active = false
+				return true
+			end
+		end
+	end
+	
+	return false
+end
 
 -- Check for collision between point (player, laser) & polygon (asteroid)
 function checkCollision(polygon, points)
@@ -245,7 +323,7 @@ function printDebug()
 	bearingText = "Bearing: " .. tostring(math.floor(player.bearing))
 	love.graphics.print(bearingText, 4, 29)
 	
-	bboxText =  "Colliding: " .. tostring(colliding)
+	bboxText =  "Laser Count: " .. tostring(#player.lasers)
 	love.graphics.print(bboxText, 4, 41)
 end
 
@@ -263,7 +341,7 @@ function updatePlayer(dt)
 	
 	-- Update heading
 	bearingRadians = math.rad(player.bearing)
-	heading = {
+	player.heading = {
 		x = math.cos(bearingRadians),
 		y = math.sin(bearingRadians)
 	}
@@ -284,8 +362,8 @@ function updatePlayer(dt)
 	
 	-- Calculate movement based on speed & heading
 	playerMove = {
-		x = heading.x * dt * player.speed, 
-		y = heading.y * dt * player.speed
+		x = player.heading.x * dt * player.speed, 
+		y = player.heading.y * dt * player.speed
 	}
 	
 	-- Move horizontally, check position & wrap screen if required
@@ -300,12 +378,79 @@ function updatePlayer(dt)
 end
 
 
+-- Update the position of all asteroids
+function updateAsteroids(dt)
+	-- for each asteroid
+	for i=1, #asteroids, 1 do
+		if asteroids[i].active then
+			-- Update heading
+			local bearingRadians = math.rad(asteroids[i].bearing)
+			local heading = {
+				x = math.cos(bearingRadians),
+				y = math.sin(bearingRadians)
+			}
+			
+			roidMove = {
+				x = heading.x * dt * asteroids[i].speed, 
+				y = heading.y * dt * asteroids[i].speed
+			}
+			
+			for j=1, #asteroids[i].points, 1 do
+				asteroids[i].points[j].x = asteroids[i].points[j].x + roidMove.x
+				asteroids[i].points[j].y = asteroids[i].points[j].y + roidMove.y
+				
+				if checkAsteroid(asteroids[i]) then
+					wrapAsteroid(asteroids[i])
+				end
+			end
+		end
+	end
+	
+end
+
+
+-- Fire a laser from the player's ship
+function fireLaser()
+	bolt = {
+		x = player.ship.top.x,
+		y = player.ship.top.y,
+		heading = player.heading,
+		speed = laserSpeed,
+		fizzle = love.timer.getTime() + laserDecay,
+		active = true
+	}
+	
+	table.insert(player.lasers, bolt)
+end
+
+-- Update the position of all lasers
+function updateLasers(dt)
+	-- for each bolt
+	for i=1, #player.lasers, 1 do
+		
+		if love.timer.getTime() > player.lasers[i].fizzle then
+			player.lasers[i].active = false
+		end
+		
+		if player.lasers[i].active then
+			boltMove = {
+				x = player.lasers[i].heading.x * dt * player.lasers[i].speed, 
+				y = player.lasers[i].heading.y * dt * player.lasers[i].speed
+			}
+			
+			player.lasers[i].x = player.lasers[i].x + boltMove.x
+			player.lasers[i].y = player.lasers[i].y + boltMove.y
+		end
+	end
+end
+
+
 -- From player's current position, get the vertices of the ship
 function updateShipVertices()
 	-- top
 	player.ship.top = {
-		x = player.position.x+(heading.x*player.size), 
-		y = player.position.y+(heading.y*player.size)
+		x = player.position.x+(player.heading.x*player.size), 
+		y = player.position.y+(player.heading.y*player.size)
 	}
 	
 	-- right
@@ -335,6 +480,93 @@ function updateShipVertices()
 		x = player.position.x+(leftHeading.x*(player.size/2)), 
 		y = player.position.y+(leftHeading.y*(player.size/2))
 	}
+end
+
+
+-- Calculate distance between two points
+function distance (a, b)
+	local dx = a.x - b.x
+	local dy = a.y - b.y
+	return math.sqrt ( dx * dx + dy * dy )
+end
+
+
+-- Generate a random asteroid
+function generateAsteroid(centre)
+
+	roidMin = roidSize-roidVariance
+	roidMax = roidSize+roidVariance
+	
+	-- generate 11 random points
+	points = {}
+	for i=0, 330, 30 do
+		r = math.rad(i)
+		xMod = math.random(roidMin, roidMax)
+		yMod = math.random(roidMin, roidMax)
+		p = {
+			x = centre.x + (math.cos(r)*xMod),
+			y = centre.y + (math.sin(r)*yMod)
+		}
+		table.insert(points, p)
+	end
+	
+	-- compute the angle from each point to the centre
+	for i=1, #points, 1 do
+		angle = math.atan2(points[i].x-centre.x,points[i].y-centre.y)
+		points[i].angle = angle
+	end
+	
+	-- sort by angle
+	table.sort(points, function(a,b)
+		local aNum = a.angle
+		local bNum = b.angle
+		return aNum < bNum
+	end)
+	
+	return points
+end
+
+
+-- maybe an optimisation step where we compute & store a bbox for each asteroid, to use in checkAsteroid?
+
+
+-- Check if all points of an asteroid are out of bounds
+function checkAsteroid(asteroid)
+	oPoints = {}
+	
+	for i=1, #asteroid.points, 1 do
+		table.insert(oPoints, asteroid.points[i])
+	end
+	
+	
+	outOfBounds = true
+	
+	for j=1, #oPoints, 1 do
+		if oPoints[j].x >= 0 and oPoints[j].y >= 0 and oPoints[j].x <= screenSize[1] and oPoints[j].y <= screenSize[2] then 
+			outOfBounds = false
+		end
+	end
+	
+	return outOfBounds
+end
+
+
+-- Wrap the points of the asteroid around the screen
+function wrapAsteroid(asteroid)
+	mp = {x = asteroid.points[1].x, y = asteroid.points[1].y}
+	for i=1, #asteroid.points, 1 do
+		if mp.x > screenSize[1] then
+			asteroid.points[i].x = asteroid.points[i].x - screenSize[1]
+		elseif mp.x < 0 then
+			asteroid.points[i].x = asteroid.points[i].x + screenSize[1]
+		elseif mp.y > screenSize[2] then
+			asteroid.points[i].y = asteroid.points[i].y - screenSize[2]
+		elseif mp.y < 0 then
+			asteroid.points[i].y = asteroid.points[i].y + screenSize[2]
+		else
+			error(mp.x .. ", " .. mp.y)
+		end
+	end
 end
 
 
@@ -377,19 +609,32 @@ function drawPlayer()
 end
 
 
--- Generate a random asteroid
-function generateAsteroid()
-	--TODO
-end
-
 -- Drawing all of the asteroids
 function drawAsteroids(list)
-	for key,polygon in ipairs(list) do
+	oPoints = {}
+	
+	for i=1, #list, 1 do
+		if list[i].active then
+			table.insert(oPoints, list[i].points)
+		end
+	end
+	
+	for key,polygon in ipairs(oPoints) do
 		vertices = {}
 		for key, coordinate in ipairs(polygon) do
 			table.insert(vertices, coordinate.x)
 			table.insert(vertices, coordinate.y)
 		end
 		love.graphics.polygon("line", vertices)
+	end
+end
+
+
+-- Drawing all the laser bolts
+function drawLasers(list)
+	for i=1, #list, 1 do
+		if list[i].active then
+			love.graphics.points(list[i].x, list[i].y)
+		end
 	end
 end
