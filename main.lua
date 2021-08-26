@@ -13,6 +13,7 @@ roidVariance = 10
 roidSpeed = 100
 laserSpeed = 200
 laserDecay = 2
+laserSize = 2
 laserClearTime = 1
 laserNextClear = 0
 debug = true
@@ -307,7 +308,7 @@ function getBbox(points)
 end
 
 
--- Simple bounding box check (TODO: this should check against the ship's bounding box rather than each vertex of the ship)
+-- Simple bounding box check
 function checkBbox(bbox, point)
 	if point.x >= bbox.xMin and point.x <= bbox.xMax and point.y >= bbox.yMin and point.y <= bbox.yMax then return true
 	else return false end
@@ -401,7 +402,7 @@ function updateAsteroids(dt)
 				asteroids[i].points[j].x = asteroids[i].points[j].x + roidMove.x
 				asteroids[i].points[j].y = asteroids[i].points[j].y + roidMove.y
 				
-				if checkAsteroid(asteroids[i]) then
+				if asteroidOffScreen(asteroids[i], "full") then
 					wrapAsteroid(asteroids[i])
 				end
 			end
@@ -534,27 +535,27 @@ function generateAsteroid(centre)
 end
 
 
--- maybe an optimisation step where we compute & store a bbox for each asteroid, to use in checkAsteroid?
+-- maybe an optimisation step where we compute & store a bbox for each asteroid, to use in asteroidOnScreen?
 
 
 -- Check if all points of an asteroid are out of bounds
-function checkAsteroid(asteroid)
-	oPoints = {}
+function asteroidOffScreen(asteroid, mode)
+	
+	-- full: is asteroid fully off screen (all vertices out of bounds)
+	-- partial: is asteroid at least partially off screen (at least one vertex out of bounds)
 	
 	for i=1, #asteroid.points, 1 do
-		table.insert(oPoints, asteroid.points[i])
-	end
-	
-	
-	outOfBounds = true
-	
-	for j=1, #oPoints, 1 do
-		if oPoints[j].x >= 0 and oPoints[j].y >= 0 and oPoints[j].x <= screenSize[1] and oPoints[j].y <= screenSize[2] then 
-			outOfBounds = false
+		p = asteroid.points[i]
+		if mode == "full" and p.x >= 0 and p.x <= screenSize[1] and p.y >= 0 and p.y <= screenSize[2] then
+			-- if a single point is still on screen, return false
+			return false
+		-- elseif mode == "partial" and (p.x < 0 or p.x > screenSize[1] or p.y < 0 or p.y > screenSize[2]) then
+		-- 	-- if a single point is off screen, return true
+		-- 	return true
 		end
 	end
 	
-	return outOfBounds
+	return true
 end
 
 
@@ -641,7 +642,7 @@ end
 function drawLasers(list)
 	for i=1, #list, 1 do
 		if list[i].active then
-			love.graphics.points(list[i].x, list[i].y)
+			love.graphics.circle("fill", list[i].x, list[i].y, laserSize)
 		end
 	end
 end
